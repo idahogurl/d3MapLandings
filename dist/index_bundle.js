@@ -63,7 +63,7 @@
 /******/ 	__webpack_require__.p = "";
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 2);
+/******/ 	return __webpack_require__(__webpack_require__.s = 4);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -91,8 +91,10 @@
     },
 */
 
+Object.defineProperty(exports, "__esModule", { value: true });
 var d3 = __webpack_require__(1);
-var topojson = __webpack_require__(4);
+var topojson = __webpack_require__(3);
+var sprintf_js = __webpack_require__(2);
 var SERVICE_URL = "https://raw.githubusercontent.com/FreeCodeCamp/ProjectReferenceData/master/meteorite-strike-data.json";
 var TOPO_JSON = "https://d3js.org/world-110m.v1.json";
 var Margin = (function () {
@@ -105,61 +107,160 @@ var Margin = (function () {
     return Margin;
 }());
 var Meteorite = (function () {
-    function Meteorite(radius, latitude, longitude, name, year, fall, nametype) {
+    function Meteorite(properties) {
+        this.mass = properties.mass;
+        this.latitude = properties.reclat;
+        this.longitude = properties.reclong;
+        this.name = properties.name;
+        this.year = new Date(properties.year);
+        this.fall = properties.fall;
+        this.nametype = properties.nametype;
+        this.classType = properties.recclass;
     }
+    Meteorite.prototype.getRadius = function () {
+        if (this.mass < 62500) {
+            return 1;
+        }
+        else if (this.mass <= 125000) {
+            return 2;
+        }
+        else if (this.mass <= 250000) {
+            return 4;
+        }
+        else if (this.mass <= 500000) {
+            return 8;
+        }
+        else if (this.mass <= 2000000) {
+            return 16;
+        }
+        else if (this.mass <= 4000000) {
+            return 32;
+        }
+        return 64;
+    };
     return Meteorite;
 }());
 var MappedLandingsChart = (function () {
     function MappedLandingsChart() {
     }
-    MappedLandingsChart.prototype.fetchData = function () {
-        // let data:Meteorite[] = [];
-        // d3.json(SERVICE_URL, (d) => {
-        //     d.features.forEach(f => {
-        //       data.push(new Meteorite(d.properties.mass, d.properties.reclat, d.properties.reclong, d.properties.name, new Date(d.propertites.year),
-        //         d.properities.fall, d.properties.nametype
-        //       ));
-        //     });
-        // });
-        //this.createChart(data);
-    };
     MappedLandingsChart.prototype.createChart = function () {
+        var _this = this;
         var margin = new Margin(35, 40, 180, 120);
         var height = 650 - margin.top - margin.bottom;
         var width = 1300 - margin.left - margin.right;
         var svgChart = d3.select("#chart")
             .append("svg")
-            .style("background", "#FFF")
+            .style("background", "steelblue")
             .attr("width", width + margin.left + margin.right)
             .attr("height", height + margin.top + margin.bottom);
+        var g = svgChart.append("g");
         var projection = d3.geoMercator()
             .translate([width / 2, height / 2])
-            .scale(500);
+            .scale(300);
         var path = d3.geoPath().projection(projection);
         d3.queue()
             .defer(d3.json, TOPO_JSON)
             .defer(d3.json, SERVICE_URL)
             .await(function (error, data, meteorites) {
             var countries = topojson.feature(data, data.objects.countries).features;
-            svgChart.selectAll("path").data(countries).enter().append("path").attr("d", path);
+            _this.drawCountries(g, countries, path);
             var meteors = [];
             meteorites.features.forEach(function (f) {
-                meteors.push(new Meteorite(f.properties.mass, f.properties.reclat, f.properties.reclong, f.properties.name, new Date(f.properties.year), f.properties.fall, f.properties.nametype));
+                meteors.push(new Meteorite(f.properties));
             });
-            svgChart.selectAll("circle").data(meteors).enter().append("circle").attr("cx", 10);
+            meteors.sort(function (a, b) {
+                return b.mass - a.mass;
+            });
+            debugger;
+            _this.drawMeteorites(g, meteors, projection);
         });
-        // //draw bubbles for bombs 
-        // bombMap.bubbles(data, {
-        //     popupTemplate: function (geo, data) {
-        //             return ['<div class="hoverinfo">' +  data.name,
-        //             '<br/>Payload: ' +  data.yield + ' kilotons',
-        //             '<br/>Country: ' +  data.country + '',
-        //             '<br/>Date: ' +  data.date + '',
-        //             '</div>'].join('');
-        //     }
-        // });
+        var zoom = d3.zoom()
+            .on("zoom", function () {
+            g.attr("transform", d3.event.transform.toString());
+            g.selectAll("path")
+                .attr("d", path.projection(projection));
+        });
+        svgChart.call(zoom);
+    };
+    MappedLandingsChart.prototype.drawCountries = function (g, countries, path) {
+        g.selectAll("path")
+            .data(countries)
+            .enter()
+            .append("path")
+            .style("fill", "Aquamarine")
+            .style("stroke", "SteelBlue")
+            .style("stroke-width", ".5px")
+            .attr("d", path);
+    };
+    MappedLandingsChart.prototype.drawMeteorites = function (g, meteors, projection) {
+        var tooltip = Tooltip.get();
+        var timeFormat = d3.timeFormat("%Y-%m-%d");
+        var colors = ["MediumPurple", "Red", "Yellow", "Orange", "SpringGreen", "Blue", "Cyan"];
+        g.selectAll("circle")
+            .data(meteors)
+            .enter()
+            .append("circle")
+            .attr("r", function (m) {
+            return m.getRadius();
+        })
+            .style("fill", function (m) {
+            m.color = colors[Math.floor(Math.random() * ((colors.length - 1) - 0 + 1)) + 0];
+            return m.color;
+        })
+            .style("opacity", function (m) {
+            return m.mass > 125000 ? .5 : 1;
+        })
+            .style("stroke-width", ".5px")
+            .style("stroke", "white")
+            .attr("cx", function (m) {
+            return projection([m.longitude, m.latitude])[0];
+        }).attr("cy", function (m) {
+            return projection([m.longitude, m.latitude])[1];
+        })
+            .on("mouseover", function (m) {
+            d3.select(d3.event.currentTarget)
+                .style("fill", "Black");
+            tooltip.transition()
+                .duration(200)
+                .style("opacity", .7);
+            tooltip.html(Tooltip.getText(m, timeFormat));
+            tooltip.style("left", d3.event.pageX.toString() + "px")
+                .style("top", d3.event.pageY.toString() + "px");
+            d3.select(d3.event.currentTarget)
+                .style("cursor", "pointer");
+        })
+            .on("mouseout", function () {
+            d3.select(d3.event.currentTarget)
+                .style("fill", function (m) {
+                return m.color;
+            });
+            tooltip
+                .transition()
+                .duration(500)
+                .style("opacity", 0);
+        });
     };
     return MappedLandingsChart;
+}());
+var Tooltip = (function () {
+    function Tooltip() {
+    }
+    Tooltip.get = function () {
+        return d3.select("#tooltip")
+            .append("div")
+            .style("pointer-events", "none")
+            .style("position", "absolute")
+            .style("padding", "10px")
+            .style("background", "white")
+            .style("color", "black")
+            .style("width", "250px")
+            .style("opacity", 0);
+    };
+    Tooltip.getText = function (meteorite, timeFormat) {
+        return sprintf_js.sprintf("Fall: %s<br/>Mass: %s<br/>Name: %s<br/>Name Type: %s<br/>" +
+            "Class:  %s<br/>Latitude:  %s<br/>Year: %s", meteorite.fall, meteorite.mass, meteorite.name, meteorite.nametype, meteorite.classType, meteorite.latitude, timeFormat(meteorite.year));
+    };
+    return Tooltip;
 }());
 var landingMap = new MappedLandingsChart();
 landingMap.createChart();
@@ -16736,12 +16837,218 @@ Object.defineProperty(exports, '__esModule', { value: true });
 /* 2 */
 /***/ (function(module, exports, __webpack_require__) {
 
-module.exports = __webpack_require__(0);
+(function(window) {
+    var re = {
+        not_string: /[^s]/,
+        number: /[diefg]/,
+        json: /[j]/,
+        not_json: /[^j]/,
+        text: /^[^\x25]+/,
+        modulo: /^\x25{2}/,
+        placeholder: /^\x25(?:([1-9]\d*)\$|\(([^\)]+)\))?(\+)?(0|'[^$])?(-)?(\d+)?(?:\.(\d+))?([b-gijosuxX])/,
+        key: /^([a-z_][a-z_\d]*)/i,
+        key_access: /^\.([a-z_][a-z_\d]*)/i,
+        index_access: /^\[(\d+)\]/,
+        sign: /^[\+\-]/
+    }
+
+    function sprintf() {
+        var key = arguments[0], cache = sprintf.cache
+        if (!(cache[key] && cache.hasOwnProperty(key))) {
+            cache[key] = sprintf.parse(key)
+        }
+        return sprintf.format.call(null, cache[key], arguments)
+    }
+
+    sprintf.format = function(parse_tree, argv) {
+        var cursor = 1, tree_length = parse_tree.length, node_type = "", arg, output = [], i, k, match, pad, pad_character, pad_length, is_positive = true, sign = ""
+        for (i = 0; i < tree_length; i++) {
+            node_type = get_type(parse_tree[i])
+            if (node_type === "string") {
+                output[output.length] = parse_tree[i]
+            }
+            else if (node_type === "array") {
+                match = parse_tree[i] // convenience purposes only
+                if (match[2]) { // keyword argument
+                    arg = argv[cursor]
+                    for (k = 0; k < match[2].length; k++) {
+                        if (!arg.hasOwnProperty(match[2][k])) {
+                            throw new Error(sprintf("[sprintf] property '%s' does not exist", match[2][k]))
+                        }
+                        arg = arg[match[2][k]]
+                    }
+                }
+                else if (match[1]) { // positional argument (explicit)
+                    arg = argv[match[1]]
+                }
+                else { // positional argument (implicit)
+                    arg = argv[cursor++]
+                }
+
+                if (get_type(arg) == "function") {
+                    arg = arg()
+                }
+
+                if (re.not_string.test(match[8]) && re.not_json.test(match[8]) && (get_type(arg) != "number" && isNaN(arg))) {
+                    throw new TypeError(sprintf("[sprintf] expecting number but found %s", get_type(arg)))
+                }
+
+                if (re.number.test(match[8])) {
+                    is_positive = arg >= 0
+                }
+
+                switch (match[8]) {
+                    case "b":
+                        arg = arg.toString(2)
+                    break
+                    case "c":
+                        arg = String.fromCharCode(arg)
+                    break
+                    case "d":
+                    case "i":
+                        arg = parseInt(arg, 10)
+                    break
+                    case "j":
+                        arg = JSON.stringify(arg, null, match[6] ? parseInt(match[6]) : 0)
+                    break
+                    case "e":
+                        arg = match[7] ? arg.toExponential(match[7]) : arg.toExponential()
+                    break
+                    case "f":
+                        arg = match[7] ? parseFloat(arg).toFixed(match[7]) : parseFloat(arg)
+                    break
+                    case "g":
+                        arg = match[7] ? parseFloat(arg).toPrecision(match[7]) : parseFloat(arg)
+                    break
+                    case "o":
+                        arg = arg.toString(8)
+                    break
+                    case "s":
+                        arg = ((arg = String(arg)) && match[7] ? arg.substring(0, match[7]) : arg)
+                    break
+                    case "u":
+                        arg = arg >>> 0
+                    break
+                    case "x":
+                        arg = arg.toString(16)
+                    break
+                    case "X":
+                        arg = arg.toString(16).toUpperCase()
+                    break
+                }
+                if (re.json.test(match[8])) {
+                    output[output.length] = arg
+                }
+                else {
+                    if (re.number.test(match[8]) && (!is_positive || match[3])) {
+                        sign = is_positive ? "+" : "-"
+                        arg = arg.toString().replace(re.sign, "")
+                    }
+                    else {
+                        sign = ""
+                    }
+                    pad_character = match[4] ? match[4] === "0" ? "0" : match[4].charAt(1) : " "
+                    pad_length = match[6] - (sign + arg).length
+                    pad = match[6] ? (pad_length > 0 ? str_repeat(pad_character, pad_length) : "") : ""
+                    output[output.length] = match[5] ? sign + arg + pad : (pad_character === "0" ? sign + pad + arg : pad + sign + arg)
+                }
+            }
+        }
+        return output.join("")
+    }
+
+    sprintf.cache = {}
+
+    sprintf.parse = function(fmt) {
+        var _fmt = fmt, match = [], parse_tree = [], arg_names = 0
+        while (_fmt) {
+            if ((match = re.text.exec(_fmt)) !== null) {
+                parse_tree[parse_tree.length] = match[0]
+            }
+            else if ((match = re.modulo.exec(_fmt)) !== null) {
+                parse_tree[parse_tree.length] = "%"
+            }
+            else if ((match = re.placeholder.exec(_fmt)) !== null) {
+                if (match[2]) {
+                    arg_names |= 1
+                    var field_list = [], replacement_field = match[2], field_match = []
+                    if ((field_match = re.key.exec(replacement_field)) !== null) {
+                        field_list[field_list.length] = field_match[1]
+                        while ((replacement_field = replacement_field.substring(field_match[0].length)) !== "") {
+                            if ((field_match = re.key_access.exec(replacement_field)) !== null) {
+                                field_list[field_list.length] = field_match[1]
+                            }
+                            else if ((field_match = re.index_access.exec(replacement_field)) !== null) {
+                                field_list[field_list.length] = field_match[1]
+                            }
+                            else {
+                                throw new SyntaxError("[sprintf] failed to parse named argument key")
+                            }
+                        }
+                    }
+                    else {
+                        throw new SyntaxError("[sprintf] failed to parse named argument key")
+                    }
+                    match[2] = field_list
+                }
+                else {
+                    arg_names |= 2
+                }
+                if (arg_names === 3) {
+                    throw new Error("[sprintf] mixing positional and named placeholders is not (yet) supported")
+                }
+                parse_tree[parse_tree.length] = match
+            }
+            else {
+                throw new SyntaxError("[sprintf] unexpected placeholder")
+            }
+            _fmt = _fmt.substring(match[0].length)
+        }
+        return parse_tree
+    }
+
+    var vsprintf = function(fmt, argv, _argv) {
+        _argv = (argv || []).slice(0)
+        _argv.splice(0, 0, fmt)
+        return sprintf.apply(null, _argv)
+    }
+
+    /**
+     * helpers
+     */
+    function get_type(variable) {
+        return Object.prototype.toString.call(variable).slice(8, -1).toLowerCase()
+    }
+
+    function str_repeat(input, multiplier) {
+        return Array(multiplier + 1).join(input)
+    }
+
+    /**
+     * export to either browser or node.js
+     */
+    if (true) {
+        exports.sprintf = sprintf
+        exports.vsprintf = vsprintf
+    }
+    else {
+        window.sprintf = sprintf
+        window.vsprintf = vsprintf
+
+        if (typeof define === "function" && define.amd) {
+            define(function() {
+                return {
+                    sprintf: sprintf,
+                    vsprintf: vsprintf
+                }
+            })
+        }
+    }
+})(typeof window === "undefined" ? this : window);
 
 
 /***/ }),
-/* 3 */,
-/* 4 */
+/* 3 */
 /***/ (function(module, exports, __webpack_require__) {
 
 // https://github.com/topojson/topojson Version 3.0.0. Copyright 2017 Mike Bostock.
@@ -18526,6 +18833,13 @@ exports.sphericalTriangleArea = sphericalTriangleArea;
 Object.defineProperty(exports, '__esModule', { value: true });
 
 })));
+
+
+/***/ }),
+/* 4 */
+/***/ (function(module, exports, __webpack_require__) {
+
+module.exports = __webpack_require__(0);
 
 
 /***/ })
